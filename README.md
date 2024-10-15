@@ -38,8 +38,17 @@ Send a message to a specific topic.
 - **Example using curl**:
 ```bash
 curl -X POST http://localhost:8080/infocenter/topic1 --data "message=Hello"
-
+```
 
 #### GET /infocenter/{topic}
 Subscribe to a specific topic and receive messages in real-time.
+
+- **Request**:
+  ```bash
+  GET /infocenter/{topic}
+
+- **Example using curl**:
+```bash
+curl -N http://localhost:8080/infocenter/topic1
+```
 
