@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>InfoCenter Admin Interface</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+    <script>
+        var source = null;
+
+        // Function to display event data
+        $(function() {
+            $("#listen").on('click', function (e) {
+                e.preventDefault();
+                if (source != null) {
+                    source.close();
+                }
+
+                var url = $("#backend").val() + $("#channel").val();
+                console.log("Opening connection to: " + url); // Log the connection URL
+
+                source = new EventSource(url);
+                source.addEventListener('msg', dump_event);
+                source.addEventListener('timeout', dump_event);
+
+                source.addEventListener('error', function(e) {
+                    console.log("Error occurred: ", e);
+                });
+            });
+
+            $("#announce").on('click', function (e) {
+                e.preventDefault();
+
+                var url = $("#backend").val() + $("#channel").val();
+                var message = $("#message").val();
+                console.log("Sending message to: " + url + " with data: " + message); // Debug message sending
+
+                $.ajax({
+                    url: url,
+                    method: "POST",
+                    data: message,
+                    success: function () {
+                        console.log("Message sent successfully");
+                    },
+                    error: function () {
+                        console.error("Failed to send message");
+                    }
+                });
+            });
+        });
+
+        function dump_event(e) {
+            console.log("Event received: ", e);
+            $("#output").append("id: " + e.lastEventId + "\nevent: " + e.type + "\nmessage: " + e.data + "\n\n");
+        }
+
+
+    </script>
+</head>
+<body>
+<div class="container">
+    <div class="row">
+        <div class="col-xs-6">
+            <h3>Config</h3>
+            <form class="form">
+                <div class="form-group">
+                    <label for="backend">Backend base URL</label>
+                    <input type="text" class="form-control" id="backend" value="http://localhost:8080/infocenter/">
+                </div>
+                <div class="form-group">
+                    <label for="channel">Channel</label>
+                    <input type="text" class="form-control" id="channel" value="test-topic">
+                </div>
+                <div class="form-group">
+                    <textarea class="form-control" id="message" rows="3" placeholder="Type your message"></textarea>
+                </div>
+                <button id="listen" class="btn btn-default">Listen</button>
+                <button id="announce" class="btn btn-default">Announce</button>
+            </form>
+        </div>
+        <div class="col-xs-6">
+            <h3>Output</h3>
+            <pre id="output"></pre>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+
+
+
+
+
+
+
