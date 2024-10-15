@@ -24,9 +24,9 @@ Info Center is a backend service developed in Go that enables real-time communic
    
 2. The server will start on **localhost:8080**
 
-### API Endpoints
+## API Endpoints
 
-#### POST /infocenter/{topic}
+### POST /infocenter/{topic}
 Send a message to a specific topic.
 
 - **Request**:
@@ -41,7 +41,7 @@ curl -X POST http://localhost:8080/infocenter/topic1 --data "message=Hello"
 ```
 
 
-#### GET /infocenter/{topic}
+### GET /infocenter/{topic}
 Subscribe to a specific topic and receive messages in real-time.
 
 - **Request**:
@@ -53,7 +53,7 @@ Subscribe to a specific topic and receive messages in real-time.
 curl -N http://localhost:8080/infocenter/topic1
 ```
 
-### Using the Frontend
+## Using the Frontend
 The project includes a simple frontend located at InfoCenter/front/index.html, which can be used to interact with the backend and test the real-time messaging functionality.
 
 To use the frontend:
