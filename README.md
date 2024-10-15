@@ -40,6 +40,7 @@ Send a message to a specific topic.
 curl -X POST http://localhost:8080/infocenter/topic1 --data "message=Hello"
 ```
 
+
 #### GET /infocenter/{topic}
 Subscribe to a specific topic and receive messages in real-time.
 
@@ -52,3 +53,19 @@ Subscribe to a specific topic and receive messages in real-time.
 curl -N http://localhost:8080/infocenter/topic1
 ```
 
+### Using the Frontend
+The project includes a simple frontend located at InfoCenter/front/index.html, which can be used to interact with the backend and test the real-time messaging functionality.
+
+To use the frontend:
+
+1. **Open the index.html file in your web browser**:
+
+   - Navigate to InfoCenter/front/index.html in your project directory.
+   - Double-click the file to open it in your default browser.
+
+2. **The frontend allows you to**:
+
+   - Subscribe to topics.
+   - Send messages to specific topics.
+
+Ensure the backend server is running on localhost:8080 for the frontend to communicate properly with the backend.
