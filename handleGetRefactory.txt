@@ -1,0 +1,84 @@
+// Handles retrieving messages for a topic
+func handleGet(w http.ResponseWriter, r *http.Request, topicName string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if topic exists
+	topic := getTopic(topicName)
+	if topic == nil {
+		http.Error(w, "Topic not found", http.StatusNotFound)
+		return
+	}
+
+	// Setup client connection
+	clientChan := setupClientConnection(w, topic)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Manage message streaming and client timeout
+	streamMessagesAndTimeout(w, r, flusher, clientChan, topicName, topic)
+}
+
+// Setup client connection and add it to the topic
+func setupClientConnection(w http.ResponseWriter, topic *Topic) chan Message {
+	clientChan := make(chan Message, 10) // Buffered channel for slow clients
+	topic.mu.Lock()
+	topic.Clients[w] = clientChan
+	topic.mu.Unlock()
+	return clientChan
+}
+
+// Stream messages and handle timeout for the client
+func streamMessagesAndTimeout(w http.ResponseWriter, r *http.Request, flusher http.Flusher, clientChan chan Message, topicName string, topic *Topic) {
+	startTime := time.Now()
+	timeoutDuration := 30 * time.Second
+
+	for {
+		select {
+		case msg := <-clientChan:
+			streamMessage(w, flusher, msg)
+		case <-time.After(timeoutDuration):
+			handleTimeout(w, flusher, startTime, topicName, topic)
+			return
+		case <-r.Context().Done():
+			handleClientDisconnection(w, topicName, topic)
+			return
+		}
+	}
+}
+
+// Stream a single message to the client
+func streamMessage(w http.ResponseWriter, flusher http.Flusher, msg Message) {
+	if msg.Data != "" {
+		fmt.Fprintf(w, "id: %d\nevent: msg\ndata: %s\n\n", msg.ID, msg.Data)
+		flusher.Flush()
+	}
+}
+
+// Handle client timeout after 30 seconds and disconnect
+func handleTimeout(w http.ResponseWriter, flusher http.Flusher, startTime time.Time, topicName string, topic *Topic) {
+	duration := int(time.Since(startTime).Seconds()) + 1
+	fmt.Fprintf(w, "event: timeout\ndata: %ds\n\n", duration)
+	flusher.Flush()
+
+	// Clean up the client after timeout
+	topic.mu.Lock()
+	delete(topic.Clients, w)
+	topic.mu.Unlock()
+	removeTopicIfEmpty(topicName)
+
+	log.Printf("Client disconnected from topic %s after %ds", topicName, duration)
+}
+
+// Handle manual client disconnection
+func handleClientDisconnection(w http.ResponseWriter, topicName string, topic *Topic) {
+	topic.mu.Lock()
+	delete(topic.Clients, w)
+	topic.mu.Unlock()
+	removeTopicIfEmpty(topicName)
+}
