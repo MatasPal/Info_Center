@@ -11,20 +11,25 @@ type Topic struct {
 	Name     string
 	Messages []Message
 	Clients  map[http.ResponseWriter]chan Message
-	mu       sync.RWMutex
+	mu       sync.RWMutex // Mutex for each topic to handle concurrency
 }
 
-var topics = make(map[string]*Topic)
+var (
+	topics  = make(map[string]*Topic)
+	topicMu sync.RWMutex // Mutex for managing topics map
+)
 
-// Retrieves or creates a topic
+// Retrieves or creates a topic if it doesn’t already exist
 func getTopic(name string) *Topic {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if topic, exists := topics[name]; exists {
+	topicMu.RLock()
+	topic, exists := topics[name]
+	topicMu.RUnlock()
+	if exists {
 		return topic
 	}
 
+	topicMu.Lock()
+	defer topicMu.Unlock()
 	newTopic := &Topic{
 		Name:    name,
 		Clients: make(map[http.ResponseWriter]chan Message),
@@ -33,14 +38,18 @@ func getTopic(name string) *Topic {
 	return newTopic
 }
 
-// Removes a topic if no clients are left
+// Removes a topic if no clients are left, ensuring proper locking
 func removeTopicIfEmpty(topicName string) {
-	mu.Lock()
-	defer mu.Unlock()
+	topicMu.Lock()
+	defer topicMu.Unlock()
 
 	topic, exists := topics[topicName]
-	if exists && len(topic.Clients) == 0 {
-		delete(topics, topicName)
-		log.Printf("Topic %s removed due to inactivity", topicName)
+	if exists {
+		topic.mu.Lock()
+		defer topic.mu.Unlock()
+		if len(topic.Clients) == 0 {
+			delete(topics, topicName)
+			log.Printf("Topic %s removed due to inactivity", topicName)
+		}
 	}
 }

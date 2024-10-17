@@ -10,53 +10,84 @@
     <script>
         var source = null;
 
-        // Function to display event data
         $(function() {
+            // Function to start listening to a topic
             $("#listen").on('click', function (e) {
                 e.preventDefault();
-                if (source != null) {
-                    source.close();
-                }
-
-                var url = $("#backend").val() + $("#channel").val();
-                console.log("Opening connection to: " + url); // Log the connection URL
-
-                source = new EventSource(url);
-                source.addEventListener('msg', dump_event);
-                source.addEventListener('timeout', dump_event);
-
-                source.addEventListener('error', function(e) {
-                    console.log("Error occurred: ", e);
-                });
+                startListening();
             });
 
+            // Function to send a message
             $("#announce").on('click', function (e) {
                 e.preventDefault();
-
-                var url = $("#backend").val() + $("#channel").val();
-                var message = $("#message").val();
-                console.log("Sending message to: " + url + " with data: " + message); // Debug message sending
-
-                $.ajax({
-                    url: url,
-                    method: "POST",
-                    data: message,
-                    success: function () {
-                        console.log("Message sent successfully");
-                    },
-                    error: function () {
-                        console.error("Failed to send message");
-                    }
-                });
+                sendMessage();
             });
         });
 
-        function dump_event(e) {
-            console.log("Event received: ", e);
-            $("#output").append("id: " + e.lastEventId + "\nevent: " + e.type + "\nmessage: " + e.data + "\n\n");
+        // Starts listening to the topic stream
+        function startListening() {
+            if (source != null) {
+                source.close();
+            }
+
+            var url = $("#backend").val() + $("#channel").val();
+            source = new EventSource(url);
+
+            source.addEventListener('msg', function(e) {
+                displayMessage(e.lastEventId, "msg", e.data);
+            });
+
+            source.addEventListener('timeout', function(e) {
+                displayEvent("Timeout", "Disconnected after " + e.data + " seconds.");
+                source.close(); // Close the connection after a timeout
+            });
+
+            source.addEventListener('error', function(e) {
+                if (e.readyState === EventSource.CLOSED) {
+                    displayEvent("Info", "Connection closed by server.");
+                } else {
+                    displayEvent("Error", "Unable to connect to the server.");
+                }
+                source.close(); // Ensure connection is closed on error
+            });
+
+            displayEvent("Info", "Listening on: " + url);
         }
 
+        // Function to send a message to the server
+        function sendMessage() {
+            var url = $("#backend").val() + $("#channel").val();
+            var message = $("#message").val().trim();
 
+            if (message === "") {
+                displayEvent("Error", "Cannot send an empty message.");
+                return;
+            }
+
+            $.ajax({
+                url: url,
+                method: "POST",
+                data: message,
+                success: function () {
+                    displayEvent("Sent", "Message sent: " + message);
+                },
+                error: function (jqXHR, textStatus, errorThrown) {
+                    displayEvent("Error", "Failed to send message.");
+                }
+            });
+        }
+
+        // Function to display messages in the requested format
+        function displayMessage(id, event, message) {
+            var formattedMessage = `id: ${id}\nevent: ${event}\nmessage: ${message}\n\n`;
+            $("#output").append(formattedMessage);
+        }
+
+        // Function to display other types of events (Info, Error, etc.)
+        function displayEvent(eventType, message) {
+            var timestamp = new Date().toLocaleTimeString();
+            $("#output").append(`[${timestamp}] ${eventType}: ${message}\n`);
+        }
     </script>
 </head>
 <body>
@@ -71,7 +102,7 @@
                 </div>
                 <div class="form-group">
                     <label for="channel">Channel</label>
-                    <input type="text" class="form-control" id="channel" value="test-topic">
+                    <input type="text" class="form-control" id="channel" value="topic1">
                 </div>
                 <div class="form-group">
                     <textarea class="form-control" id="message" rows="3" placeholder="Type your message"></textarea>
@@ -88,6 +119,9 @@
 </div>
 </body>
 </html>
+
+
+
 
 
 

@@ -2,46 +2,39 @@ package BackendServer
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 )
 
-var messageID int
-var mu sync.Mutex
-
 // Handles posting a message to a topic
 func handlePost(w http.ResponseWriter, r *http.Request, topicName string) {
-	// Allow CORS
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	// Read message data from request body
+	msgData, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read message data", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
 
-	// Your existing logic for handling POST requests
-	var msgData string
-	fmt.Fscan(r.Body, &msgData)
-	r.Body.Close()
-
-	mu.Lock()
-	messageID++
-	msg := Message{ID: messageID, Data: msgData}
-	mu.Unlock()
-
-	log.Printf("Message received: %s", msg.Data)
+	// Generate and append the new message
+	msgID := getNextMessageID()
+	msg := Message{ID: msgID, Data: string(msgData)}
 
 	topic := getTopic(topicName)
 	topic.mu.Lock()
 	topic.Messages = append(topic.Messages, msg)
 
+	// Broadcast the message to all connected clients
 	for client, ch := range topic.Clients {
 		select {
-		case ch <- msg:
-			log.Printf("Message sent to client: %s", msg.Data)
+		case ch <- msg: // Send the message
 		default:
-			close(ch)
+			close(ch) // Disconnect slow clients
 			delete(topic.Clients, client)
-			log.Printf("Client disconnected")
+			log.Printf("Disconnected slow client from topic %s", topicName)
+			removeTopicIfEmpty(topicName) // Check if topic should be removed
 		}
 	}
 	topic.mu.Unlock()
@@ -49,51 +42,59 @@ func handlePost(w http.ResponseWriter, r *http.Request, topicName string) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Handles retrieving messages for a topic
 func handleGet(w http.ResponseWriter, r *http.Request, topicName string) {
-	// Allow CORS
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	// Your existing logic for handling GET requests (Server-Sent Events)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
 		return
 	}
 
+	// Check if topic exists
 	topic := getTopic(topicName)
-	ch := make(chan Message)
-	topic.mu.Lock()
-	topic.Clients[w] = ch
-
-	// Send all previously sent messages to the new client
-	for _, msg := range topic.Messages {
-		fmt.Fprintf(w, "id: %d\nevent: msg\ndata: %s\n\n", msg.ID, msg.Data)
-		flusher.Flush()
+	if topic == nil {
+		http.Error(w, "Topic not found", http.StatusNotFound)
+		return
 	}
+
+	clientChan := make(chan Message, 10) // Buffered channel for slow clients
+	topic.mu.Lock()
+	topic.Clients[w] = clientChan
 	topic.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	timeout := time.After(30 * time.Second)
-	start := time.Now()
-
-	log.Printf("Client subscribed to topic: %s", topicName)
+	// Track connection time for timeout
+	startTime := time.Now()
+	timeoutDuration := 30 * time.Second // Set the timeout duration
 
 	for {
 		select {
-		case msg := <-ch:
-			log.Printf("Sending message to client: %s", msg.Data)
-			fmt.Fprintf(w, "id: %d\nevent: msg\ndata: %s\n\n", msg.ID, msg.Data)
+		case msg := <-clientChan:
+			if msg.Data != "" { // Avoid empty messages
+				// Send message event in the required format
+				fmt.Fprintf(w, "id: %d\nevent: msg\ndata: %s\n\n", msg.ID, msg.Data)
+				flusher.Flush()
+			}
+		case <-time.After(timeoutDuration): // Timeout event after 30 seconds
+			// Calculate the total time the client was connected (30s + 1s)
+			duration := int(time.Since(startTime).Seconds()) + 1
+
+			// Send the timeout event in the required format
+			fmt.Fprintf(w, "event: timeout\ndata: %ds\n\n", duration)
 			flusher.Flush()
-		case <-timeout:
-			duration := time.Since(start)
-			log.Printf("Client disconnected after %d seconds", int(duration.Seconds()))
-			fmt.Fprintf(w, "event: timeout\ndata: %ds\n\n", int(duration.Seconds()))
-			flusher.Flush()
+
+			// Clean up client and check if topic can be removed
+			topic.mu.Lock()
+			delete(topic.Clients, w)
+			topic.mu.Unlock()
+			removeTopicIfEmpty(topicName)
+
+			log.Printf("Client disconnected from topic %s after %ds", topicName, duration)
+			return // Disconnect client after timeout
+		case <-r.Context().Done(): // Client manually disconnected
 			topic.mu.Lock()
 			delete(topic.Clients, w)
 			topic.mu.Unlock()
@@ -101,5 +102,4 @@ func handleGet(w http.ResponseWriter, r *http.Request, topicName string) {
 			return
 		}
 	}
-	w.WriteHeader(http.StatusOK)
 }
