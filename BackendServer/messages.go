@@ -53,7 +53,7 @@ func handleGet(w http.ResponseWriter, r *http.Request, topicName string) {
 	// Check if topic exists
 	topic := getTopic(topicName)
 	if topic == nil {
-		http.Error(w, "Topic not found", http.StatusNotFound)
+		http.Error(w, "Topic not found or removed", http.StatusNotFound)
 		return
 	}
 
@@ -103,3 +103,4 @@ func handleGet(w http.ResponseWriter, r *http.Request, topicName string) {
 		}
 	}
 }
+
